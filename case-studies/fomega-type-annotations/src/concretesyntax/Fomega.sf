@@ -35,6 +35,10 @@ context-free syntax
   "fomega"      "|[" FomegaDefs "]|" -> StrategoTerm {cons("ToMetaExpr")}
                 "|[" FomegaDefs "]|" -> StrategoTerm {cons("ToMetaExpr")}
 
+  "fomega-ctx" "|[" Context "]|" -> StrategoTerm {cons("ToMetaExpr")}
+//  "fomega"     "|[" Context "]|" -> StrategoTerm {cons("ToMetaExpr")}
+//               "|[" Context "]|" -> StrategoTerm {cons("ToMetaExpr")}
+
 context-free syntax
   "~" StrategoTerm  -> StrategoId {cons("FromMetaExpr")}
   "~%" StrategoTerm -> StrategoId {cons("FromMetaExpr")}
