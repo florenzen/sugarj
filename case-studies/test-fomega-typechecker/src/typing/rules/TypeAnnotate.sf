@@ -1,0 +1,35 @@
+module typing.rules.TypeAnnotate
+
+import org.sugarj.languages.Fomega
+
+rules
+
+  anno-type = anno-type-known <+ anno-type-unknown
+
+  anno-type-known : expr@Nat(n) -> <put-type; debug(!"PUT TYPE NAT")> (TyBool(), expr)
+
+  anno-type-known : expr@String(s) -> <put-type; debug(!"PUT TYPE NAT")> (TyString(), expr)
+
+  anno-type-unknown : expr -> expr
+
+rules
+
+  put-type = ?(T, expr); <put-anno(|"type",T)> expr
+
+  get-type = get-anno(|"type")
+
+  anno-type-bu = bottomup(anno-type)
+
+analyses
+  anno-type-bu
+
+rules
+
+  replace-with-type :
+    expr@Nat(n) -> Ascription(Locked(Nat(n)), <get-type> expr)
+
+  replace-with-type :
+    expr@String(s) -> Ascription(Locked(String(s)), <get-type> expr)
+
+desugarings
+  replace-with-type

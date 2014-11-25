@@ -1,0 +1,19 @@
+module Try
+
+import typing.rules.TypeChecker
+
+public val x1 = "a"
+
+public val x2 = \x:Nat. x
+
+public type Foo = String
+
+public val x3 = \n:Foo. n
+
+public val x4 = {f=x1,y=x2}
+
+public type Id = \X::*. X
+
+public val x5 = (\n:Foo. 1) x1
+
+public val x6 = 1

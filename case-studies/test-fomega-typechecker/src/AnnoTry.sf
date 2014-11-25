@@ -1,0 +1,7 @@
+module AnnoTry
+
+import typing.rules.TypeAnnotate
+
+val x = 1
+val y = "a"
+val z = 1

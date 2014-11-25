@@ -1,0 +1,15 @@
+module typing.extensions.adt.Syntax
+
+import org.sugarj.languages.Fomega
+
+
+context-free syntax
+  "data" FomegaID FomegaID* "=" { Constructor "|" }+ -> FomegaDef {cons("FomegaDataDef")}
+  
+  FomegaID "{" FomegaTypeDecls "}" -> Constructor {cons("FomegaConDef")}
+
+lexical syntax
+  "data" -> Keyword
+
+lexical restrictions
+  "data" -/- [A-Za-z0-9]
