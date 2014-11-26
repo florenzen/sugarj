@@ -1,0 +1,8 @@
+module org/sugarj/languages/SugarFomega
+imports org/sugarj/languages/Sugar
+
+signature constructors
+  CompilationUnit : FomegaModuleDec * List(FomegaImport) * List(FomegaOrSugarDec) -> SugarCompilationUnit
+  ModuleDec : FomegaMID -> FomegaModuleDec
+  FomegaBody : List(FomegaDef) -> FomegaOrSugarDec
+  ExtensionBody : List(ExtensionElem) -> FomegaOrSugarDec

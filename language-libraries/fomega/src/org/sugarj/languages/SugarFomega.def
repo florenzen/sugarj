@@ -1,0 +1,49 @@
+definition
+module org/sugarj/languages/SugarFomega
+imports org/sugarj/languages/Fomega
+        org/sugarj/languages/Sdf2
+        org/sugarj/languages/Stratego
+        org/sugarj/languages/EditorServices
+        org/sugarj/languages/Sugar
+
+exports
+  lexical syntax
+    [\ \t\r\n] -> LAYOUT
+
+  context-free restrictions
+    LAYOUT? -/- [\ \t\r\n]
+
+  lexical syntax
+    Comment                                                   -> LAYOUT
+    "//" ~[\n\r]* ([\n\r] | EOF)                              -> Comment
+    "/*" CommentPart* "*/"                                    -> Comment
+    ~[\*]                                                     -> CommentPart
+    Asterisk                                                  -> CommentPart
+    "*"                                                       -> Asterisk
+                                                              -> EOF
+  lexical restrictions
+    "/**" -/- [\/]
+    "/*" -/- [\*]
+    Asterisk -/- [\/]
+    EOF -/- ~[]
+
+  context-free restrictions
+    LAYOUT? -/- [\/] . [\/]
+    LAYOUT? -/- [\/] . [\*]
+
+
+  context-free start-symbols
+  	CompilationUnit
+
+  context-free syntax
+    FomegaModuleDec FomegaImports FomegaOrSugarDec -> CompilationUnit {cons("CompilationUnit")}
+
+    FomegaDefinitions -> FomegaOrSugarDec
+    SugarDefElements -> FomegaOrSugarDec
+
+    ExtensionElem+ -> SugarDefElements {cons("ExtensionBody")}
+
+  context-free syntax
+    FomegaModuleDec -> ToplevelDeclaration
+    FomegaImport -> ToplevelDeclaration
+    FomegaOrSugarDec -> ToplevelDeclaration

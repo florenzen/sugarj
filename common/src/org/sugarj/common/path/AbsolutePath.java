@@ -1,24 +1,29 @@
 package org.sugarj.common.path;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectOutput;
 
 
 /**
  * @author Sebastian Erdweg <seba at informatik uni-marburg de>
  */
 public class AbsolutePath extends Path {
-  private static final long serialVersionUID = 5295721717436544187L;
 
   private String path;
+
+  /**
+   * For externalization only.
+   */
+  public AbsolutePath() { }
   
   // cai 23.09.12
   // when constructed given a relative path,
   // this object assumes JVM's PWD to be the base.
   public AbsolutePath(String path) {
     if (!acceptable(path))
-      throw new IllegalArgumentException(
-          "Internal error: AbsolutePath constructed on unacceptable argument:\n\""+path+"\""
-      );
+      throw new IllegalArgumentException("AbsolutePath constructed on unacceptable argument: " + path);
     this.path = trimBack(path).replace(File.separatorChar, '/');
   }
   
@@ -40,4 +45,15 @@ public class AbsolutePath extends Path {
         || path.equals(".");
   }
 
+  @Override
+  public void writeExternal(ObjectOutput out) throws IOException {
+    out.writeObject(path);
+  }
+
+  @Override
+  public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
+    path = (String) in.readObject();
+    if (!acceptable(path))
+      throw new IllegalArgumentException("AbsolutePath constructed on unacceptable argument: " + path);
+  }
 }

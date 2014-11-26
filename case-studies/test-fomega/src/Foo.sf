@@ -1,0 +1,18 @@
+module Foo
+
+import org.sugarj.languages.Fomega
+
+context-free syntax
+  "fun" FomegaID "::" FomegaKind "." FomegaType -> FomegaType {cons("FunTyAbs")}
+
+rules
+  desugar-fun-type-abs : 
+    FunTyAbs(name,kind,type) 
+    -> TyAbs(name,kind,type)
+
+desugarings
+  desugar-fun-type-abs
+
+rules
+  constraint-warning :
+    t@FunTyAbs(name, kind, type) -> (t, "\"fun\" keyword is deprecated.")

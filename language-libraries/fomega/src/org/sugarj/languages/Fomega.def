@@ -1,0 +1,224 @@
+definition
+module Fomega-Lexical
+
+exports
+  sorts ID MID QID NAT STRING Keyword PrimitiveType
+
+  lexical syntax
+    [a-zA-Z][A-Za-z0-9]* -> ID
+    [0-9]+ -> NAT
+    "\""~[\"\\\n\r]*"\"" -> STRING
+
+    Keyword -> ID {reject}
+    PrimitiveType -> ID {reject}
+
+    "forall" -> Keyword
+    "mu" -> Keyword
+    "if" -> Keyword
+    "then" -> Keyword
+    "else" -> Keyword
+    "case" -> Keyword
+    "of" -> Keyword
+    "fold" -> Keyword
+    "unfold" -> Keyword
+    "as" -> Keyword
+    "module" -> Keyword
+    "import" -> Keyword
+    "qualified" -> Keyword
+    "public" -> Keyword
+    "val" -> Keyword
+    "type" -> Keyword
+    "true" -> Keyword
+    "false" -> Keyword
+
+    "Nat" -> PrimitiveType
+    "Bool" -> PrimitiveType
+    "String" -> PrimitiveType
+
+  lexical restrictions
+    ID -/- [A-Za-z0-9]
+    NAT -/- [0-9]
+
+    "if" "then" "else" "case" "of" "fold" "unfold"
+    "as" "module" "import" "qualified" "public" 
+    "val" "type" "true" "false" -/- [A-Za-z0-9]
+
+    "Nat" "Bool" "String" -/- [A-Za-z0-9]
+
+  lexical syntax
+    {ID "."}+ -> MID
+	ID "." {ID "."}+ -> QID
+
+  lexical restrictions
+    MID -/- [\.]
+    QID -/- [\.]
+
+module Fomega-Type
+imports Fomega-Lexical
+
+exports
+  sorts Type TyDecl TyDecls TyDecls1 Kind
+
+  context-free syntax
+    ID                    -> Type {cons("TyVar")}
+    "Nat"                 -> Type {cons("TyNat")}
+    "Bool"                -> Type {cons("TyBool")}
+    "String"              -> Type {cons("TyString")}
+    "{" TyDecls "}"       -> Type {cons("TyRecord")}
+    "<" TyDecls ">"       -> Type {cons("TyVariant")}
+    "[]"                  -> Type {cons("TyEmpty")}
+    "{" Type "," Type "}" -> Type {cons("TyPair")}
+    Type "." "1"          -> Type {cons("TyFst")}
+    Type "." "2"          -> Type {cons("TySnd")}
+
+    "(" Type ")" -> Type {bracket}
+
+    ID ":" Type -> TyDecl {cons("TyDecl")}
+
+                        -> TyDecls  {cons("TyDeclsNil")}
+    TyDecl TyDecls1     -> TyDecls  {cons("TyDeclsCons")}
+                        -> TyDecls1 {cons("TyDeclsNil")}
+    "," TyDecl TyDecls1 -> TyDecls1 {cons("TyDeclsCons")}
+
+    "*"                   -> Kind {cons("KiStar")}
+    Kind "=>" Kind        -> Kind {cons("KiArrow"), right}
+    "[]"                  -> Kind {cons("KiEmpty")}
+    "{" Kind "," Kind "}" -> Kind {cons("KiPair")}
+
+    "(" Kind ")" -> Kind {bracket}
+
+    QID -> Type {cons("TyQVar")}
+
+    Type Type                           -> Type {cons("TyApp"), left}
+    Type "->" Type                      -> Type {cons("TyArrow"), right}
+    "forall" ID "::" Kind "." Type      -> Type {cons("TyForall")}
+    "\\" ID "::" Kind "." Type          -> Type {cons("TyAbs")}
+    "mu" "(" Type "," Type ")"          -> Type {cons("TyMu")}
+
+  context-free priorities
+      Type Type      -> Type
+    > Type "->" Type -> Type
+    > {
+      "forall" ID "::" Kind "." Type      -> Type
+      "\\" ID "::" Kind "." Type          -> Type
+      "mu" Kind "." "(" Type "," Type ")" -> Type
+    }
+
+module Fomega-Module
+imports Fomega-Lexical
+imports Fomega-Type
+imports Fomega-Expr
+
+exports
+  sorts Module Def Defs Import Imports ModuleDec Public Qualified Definitions
+
+  context-free syntax
+    "module" MID                  -> ModuleDec {cons("ModuleDec")}
+    ModuleDec Imports Definitions -> Module    {cons("Module")}
+
+    Import*                 -> Imports {cons("FomegaImports")}
+    "import" Qualified? MID -> Import  {cons("Import")}
+
+    Defs -> Definitions {cons("FomegaBody")}
+
+    Def      -> Defs {cons("DefsEnd")}
+    Def Defs -> Defs {cons("DefsCons")}
+
+    Public? "val" ID "=" Expr  -> Def {cons("ValDef")}
+    Public? "type" ID "=" Type -> Def {cons("TypeDef")} 
+
+    "public"    -> Public    {cons("Public")}
+    "qualified" -> Qualified {cons("Qualified")}
+
+  context-free start-symbols Module 
+
+
+module Fomega-Expr
+imports Fomega-Lexical
+imports Fomega-Type
+
+exports
+  sorts Expr Field Fields Fields1 Branch Branches
+
+  context-free syntax
+    ID -> Expr {cons("Var")}
+    QID -> Expr {cons("QVar")}
+    "(" Expr ")" -> Expr {bracket}
+    "{" Fields "}" -> Expr {cons("Record")}
+    "<" Field ">" "as" Type -> Expr {cons("Variant")}
+    "true" -> Expr {cons("True")}
+    "false" -> Expr {cons("False")}
+    NAT -> Expr {cons("Nat")}
+    STRING -> Expr {cons("String")}
+
+    ID "=" Expr -> Field {cons("Field")}
+
+                      -> Fields  {cons("FieldsNil")}
+    Field Fields1     -> Fields  {cons("FieldsCons")}
+                      -> Fields1 {cons("FieldsNil")}
+    "," Field Fields1 -> Fields1 {cons("FieldsCons")}
+
+    "<" ID "=" ID ">" "=>" Expr -> Branch   {cons("Branch")}
+    Branch                      -> Branches {cons("BranchesEnd")}
+    Branch ";" Branches         -> Branches {cons("BranchesCons")}
+
+    Expr "!" ID -> Expr {cons("SelectRcd")}
+    Expr Expr -> Expr {cons("App"), left}
+    Expr "[" Type "]" -> Expr {cons("TApp")}
+    "fold" "[" Type "]" Expr -> Expr {cons("Fold")}
+    "unfold" "[" Type "]" Expr -> Expr {cons("Unfold")}
+    Expr "as" Type -> Expr {cons("Ascription")}
+    "\\" ID ":" Type "." Expr -> Expr {cons("Abs")}
+    "\\" ID "::" Kind "." Expr -> Expr {cons("TAbs")}
+    "if" Expr "then" Expr "else" Expr -> Expr {cons("Cond")}
+    "case" Expr "of" Branches -> Expr {cons("Case")}
+
+  context-free priorities
+      Expr "!" ID -> Expr {cons("SelectRcd")}
+    > {
+      Expr Expr -> Expr {cons("App"), left}
+      Expr "[" Type "]" -> Expr {cons("TApp")}
+      "fold" "[" Type "]" Expr -> Expr {cons("Fold")}
+      "unfold" "[" Type "]" Expr -> Expr {cons("Unfold")}
+    }
+    > {
+      Expr "as" Type -> Expr {cons("Ascription")}
+      "<" Field ">" "as" Type -> Expr {cons("Variant")}
+    }
+    > { 
+      "\\" ID ":" Type "." Expr -> Expr {cons("Abs")}
+      "\\" ID "::" Kind "." Expr -> Expr {cons("TAbs")}
+      "if" Expr "then" Expr "else" Expr -> Expr {cons("Cond")}
+      "case" Expr "of" Branches -> Expr {cons("Case")}
+    }
+
+
+module org/sugarj/languages/Fomega
+imports Fomega-Module [
+    Definitions => FomegaDefinitions
+    MID => FomegaMID
+    ID => FomegaID
+    QID => FomegaQID
+    NAT => FomegaNAT
+    STRING => FomegaSTRING
+    Keyword => FomegaKeyword
+    PrimitiveType => FomegaPrimitiveType
+    Type => FomegaType
+    TyDecl => FomegaTyDecl
+    TyDecls => FomegaTyDecls
+    TyDecls1 => FomegaTyDecls1
+    Kind => FomegaKind
+    Module => FomegaModule
+    Def => FomegaDef
+    Defs => FomegaDefs
+    Import => FomegaImport
+    Imports => FomegaImports
+    Expr => FomegaExpr
+    Field => FomegaField
+    Fields => FomegaFields
+    Fields1 => FomegaFields1
+    ModuleDec => FomegaModuleDec
+    Branch => FomegaBranch
+    Branches => FomegaBranches
+    Qualified => FomegaQualified
+    Public => FomegaPublic ]

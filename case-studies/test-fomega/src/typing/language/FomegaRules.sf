@@ -1,0 +1,24 @@
+module typing.language.FomegaRules
+
+import typing.language.FomegaRelation
+import typing.language.Rule
+
+============== K-Nat
+~ctx |- Nat :: *
+
+=============== K-Bool
+~ctx |- Bool :: *
+
+================= K-String
+~ctx |- String :: *
+
+============================ K-Var
+(~ctx; T~X::~k) |- T~X :: ~k
+
+~ctx |- T~X :: ~k
+============================ K-Weak
+(~ctx; T~Y::~k) |- T~X :: ~k
+
+(~ctx; T~X :: ~k1) |- ~T :: ~k2
+===================================== K-TAbs
+~ctx |- \T~X :: ~k1. ~T :: ~k1 => ~k2

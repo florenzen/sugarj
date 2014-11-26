@@ -1,0 +1,11 @@
+module Test
+
+import sub.Bar
+import typing.Check
+
+// type App :: * => * = fun A::* . A
+
+val x = 5
+
+type T2 = Nat
+type T = \X :: * . T2

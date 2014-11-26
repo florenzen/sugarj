@@ -1,0 +1,15 @@
+module tests.rules.SimpleErrors
+
+import typing.rules.TypeChecker
+
+val val1 = (\x:Nat. x) true
+
+val val2 = if val1 then false else true
+
+val val3 = if true then (\x:String. true) else (\x:String. x)
+
+val val4 = if true then val1 else true
+
+val val5 = if true then (\x:String. true) else true
+
+val val6 = (\X::*.\x:X. x) [\X::*.X]

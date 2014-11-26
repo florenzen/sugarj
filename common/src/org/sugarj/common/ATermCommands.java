@@ -3,10 +3,10 @@ package org.sugarj.common;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 
 import org.spoofax.interpreter.terms.IStrategoAppl;
 import org.spoofax.interpreter.terms.IStrategoConstructor;
@@ -17,13 +17,11 @@ import org.spoofax.interpreter.terms.IStrategoReal;
 import org.spoofax.interpreter.terms.IStrategoString;
 import org.spoofax.interpreter.terms.IStrategoTerm;
 import org.spoofax.interpreter.terms.ITermFactory;
-import org.spoofax.jsglr.client.imploder.ImploderOriginTermFactory;
-import org.spoofax.jsglr_layout.client.InvalidParseTableException;
-import org.spoofax.jsglr_layout.client.imploder.IToken;
-import org.spoofax.jsglr_layout.client.imploder.ImploderAttachment;
-import org.spoofax.jsglr_layout.client.imploder.Token;
-import org.spoofax.jsglr_layout.client.imploder.Tokenizer;
-import org.spoofax.jsglr_layout.io.ParseTableManager;
+import org.spoofax.jsglr.client.InvalidParseTableException;
+import org.spoofax.jsglr.client.imploder.IToken;
+import org.spoofax.jsglr.client.imploder.ImploderAttachment;
+import org.spoofax.jsglr.client.imploder.Token;
+import org.spoofax.jsglr.io.ParseTableManager;
 import org.spoofax.terms.StrategoListIterator;
 import org.spoofax.terms.TermFactory;
 import org.spoofax.terms.attachments.ParentAttachment;
@@ -79,7 +77,24 @@ public class ATermCommands {
     }
   }
   
-  public static ITermFactory factory = new ImploderOriginTermFactory(new ParentTermFactory(new TermFactory().getFactoryWithStorageType(IStrategoTerm.MUTABLE)));
+  public static class PrettyPrintError extends Error {
+    private static final long serialVersionUID = 1435096897087780884L;
+    private IStrategoTerm term;
+    private String msg;
+    public PrettyPrintError(IStrategoTerm term, String msg) {
+      this.term = term;
+      this.msg = msg;
+    }
+    public IStrategoTerm getTerm() {
+      return term;
+    }
+    public String getMsg() {
+      return msg;
+    }
+  }
+  
+  // TODO use origin factory
+  public static ITermFactory factory = new ParentTermFactory(new TermFactory().getFactoryWithStorageType(IStrategoTerm.MUTABLE));
   public static ParseTableManager parseTableManager = new ParseTableManager(factory, false);
 
   public static IStrategoTerm atermFromFile(String filename) throws IOException {
@@ -272,29 +287,16 @@ public class ATermCommands {
   }
   
   public static List<IStrategoTerm> registerSemanticProvider(Collection<IStrategoTerm> editorServices, Path jarfile) throws IOException {
+    List<IStrategoTerm> newServices = new ArrayList<IStrategoTerm>(editorServices);
+
+    if (jarfile == null)
+      return newServices;
+    
     String jarfilePath = jarfile.getAbsolutePath().replace("\\", "\\\\").replace("\"", "\\\"");
-    IStrategoTerm semanticProvider = atermFromString("SemanticProvider(\"" + jarfilePath + "\")");
-    
-    List<IStrategoTerm> newServices = new ArrayList<IStrategoTerm>();
-    
-    for (IStrategoTerm service : editorServices)
-    {
-      if (ATermCommands.isApplication(service, "Builders")) {
-        IStrategoTerm name = ATermCommands.getApplicationSubterm(service, "Builders", 0);
-        IStrategoTerm builders = ATermCommands.getApplicationSubterm(service, "Builders", 1);
-        if (ATermCommands.isList(builders)) {
-          List<IStrategoTerm> builderList = new ArrayList<IStrategoTerm>();
-          builderList.add(semanticProvider);
-          builderList.addAll(getList(builders));
-          builders = ATermCommands.makeList("SemanticRule*", builderList);
-        }
-        
-        service = ATermCommands.makeAppl("Builders", "Section", 2, name, builders);
-      }
-      
-      newServices.add(service);
-    }
-    
+    IStrategoTerm builder = ATermCommands.atermFromString(
+        "Builders(\"sugarj checking\", [SemanticObserver(Strategy(\"sugarj-analyze\")), SemanticProvider(\"" + jarfilePath + "\")])");
+    newServices.add(builder);
+
     return newServices;
   }
 
@@ -302,20 +304,37 @@ public class ATermCommands {
     IToken left = ImploderAttachment.getLeftToken(toplevelDecl);
     IToken right = ImploderAttachment.getRightToken(toplevelDecl);
     
-    Path file = null;
-    try {
-      file = atermToFile(toplevelDecl);
-    } catch (IOException e) {
-      e.printStackTrace();
+//    Path file = null;
+//    try {
+//      file = atermToFile(toplevelDecl);
+//    } catch (IOException e) {
+//      e.printStackTrace();
+//    }
+    
+    if (left == null || right == null) {
+      new IllegalStateException(msg).printStackTrace();
+      return;
     }
     
-    if (left == null || right == null)
-      throw new IllegalStateException(msg + ": " + file);
+    HashMap<String, String> cache = new HashMap<String, String>();
     
     for (int i = left.getIndex(), max = right.getIndex(); i <= max; i++) {
       Token tok = ((Token) left.getTokenizer().getTokenAt(i));
       if (tok.getError() == null || tok.getError().isEmpty())
         tok.setError(msg);
+      else {
+        StringBuilder b = new StringBuilder();
+        b.append(tok.getError());
+        b.append("<br>");
+        b.append(msg);
+        String key = b.toString();
+        String val = cache.get(key);
+        if (val == null) {
+          val = key;
+          cache.put(key, val);
+        }
+        tok.setError(val);
+      }
       
       if (tok.getTokenizer().getInput().length() <= tok.getStartOffset() || tok.getTokenizer().getInput().charAt(tok.getStartOffset()) == '\n')
         break;
@@ -386,45 +405,6 @@ public class ATermCommands {
     return term;
   }
   
-  public static IStrategoTerm fixTokenizer(IStrategoTerm term) {
-    if (term == null)
-      return null;
-    
-    Tokenizer tokenizer = (Tokenizer) ImploderAttachment.getTokenizer(term);
-    org.spoofax.jsglr.client.imploder.Tokenizer oTokenizer = tokenizer.makeStdTokenizer();
-    Map<Token, org.spoofax.jsglr.client.imploder.Token> map = tokenizer.reassignTokens(oTokenizer);
-    
-    IStrategoTerm oTerm = fixTokens(term, map);
-    oTokenizer.setAst(oTerm);
-    oTokenizer.initAstNodeBinding();
-    return oTerm;
-  }
-  
-  private static IStrategoTerm fixTokens(IStrategoTerm term, Map<Token, org.spoofax.jsglr.client.imploder.Token> map) {
-    LinkedList<IStrategoTerm> terms = new LinkedList<IStrategoTerm>();
-    terms.push(term);
-    
-    while (!terms.isEmpty()) {
-      IStrategoTerm current = terms.pop();
-      
-      ImploderAttachment attach = ImploderAttachment.get(current);
-      boolean isSequence = attach.isSequenceAttachment();
-      String sort = isSequence ? attach.getElementSort() : attach.getSort();
-      IToken left = attach.getLeftToken();
-      IToken right = attach.getRightToken();
-      
-      org.spoofax.jsglr.client.imploder.Token oLeft = map.get(left);
-      org.spoofax.jsglr.client.imploder.Token oRight = map.get(right);
-      
-      org.spoofax.jsglr.client.imploder.ImploderAttachment.putImploderAttachment(current, isSequence, sort, oLeft, oRight);
-      
-      for (int i = current.getSubtermCount() - 1; i >= 0; i--)
-        terms.push(current.getAllSubterms()[i]);
-    }
-    
-    return term;
-  }
-  
   public static IStrategoTerm readPrettyPrintTable(String p) {
     IStrategoTerm ppTableFile = ATermCommands.makeString(p);
     return parse_pptable_file_0_0.instance.invoke(org.strategoxt.stratego_gpp.stratego_gpp.init(), ppTableFile);
@@ -439,5 +419,45 @@ public class ATermCommands {
     IStrategoTerm textTerm = box2text_string_0_1.instance.invoke(ctx, aboxTerm, factory.makeInt(80));
     return ATermCommands.getString(textTerm);
 
+  }
+
+  /**
+   * Copies the imploder attachments from one term to the other. The two input terms must be structurally equivalent.
+   * 
+   * @return the term 'to' with the imploder attachments of 'from'.
+   */
+  public static IStrategoTerm copyTokens(IStrategoTerm from, IStrategoTerm to) {
+    if (from == to)
+      return to;
+    
+    IStrategoTerm result = to;
+    LinkedList<IStrategoTerm> fromStack = new LinkedList<IStrategoTerm>();
+    LinkedList<IStrategoTerm> toStack = new LinkedList<IStrategoTerm>();
+    fromStack.push(from);
+    toStack.push(to);
+    
+    while (!fromStack.isEmpty()) {
+      from = fromStack.pop();
+      to = toStack.pop();
+      
+      ImploderAttachment attach = ImploderAttachment.get(from);
+      if (attach != null)
+        ImploderAttachment.putImploderAttachment(
+            to,
+            attach.isSequenceAttachment(), 
+            attach.isSequenceAttachment() ? attach.getElementSort() : attach.getSort(), 
+            attach.getLeftToken(), 
+            attach.getRightToken());
+      
+      for (int i = 0; i < from.getSubtermCount(); i++) {
+        fromStack.push(from.getSubterm(i));
+        
+        IStrategoTerm subterm = to.getSubterm(i);
+        ParentAttachment.putParent(subterm, to, null);
+        toStack.push(subterm);
+      }
+    }
+    
+    return result;
   }
 }

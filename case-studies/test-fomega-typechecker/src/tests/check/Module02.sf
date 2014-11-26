@@ -1,0 +1,12 @@
+module tests.check.Module02
+
+import typing.check.TypeChecker
+
+import tests.check.Module01
+
+type NTest = N
+val ztest = z
+
+// undefined identifier Private/private
+type PrivateFail = Private
+val privateFail = private

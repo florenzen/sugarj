@@ -3,7 +3,7 @@ Bundle-ManifestVersion: 2
 Bundle-Name: org.sugarj.editor
 Bundle-SymbolicName: org.sugarj.editor;singleton:=true
 Bundle-Version: 1.0.0.qualifier
-Bundle-Activator: org.sugarj.editor.Activator
+Bundle-Activator: org.sugarj.editor.SugarJActivator
 Export-Package: org.sugarj.builder,
  org.sugarj.editor;
   uses:="org.eclipse.imp.preferences,
@@ -32,8 +32,9 @@ Require-Bundle: org.eclipse.core.runtime,
  org.eclipse.ui.console,
  org.eclipse.ui.ide,
  org.sugarj.common,
- org.spoofax.jsglr_layout,
- org.spoofax.jsglr
-Bundle-RequiredExecutionEnvironment: JavaSE-1.6
+ org.spoofax.jsglr,
+ org.sugarj.languagelib
+Bundle-RequiredExecutionEnvironment: JavaSE-1.7
 Bundle-ActivationPolicy: lazy
-Import-Package: org.spoofax.terms.attachments
+Import-Package: org.eclipse.jdt.internal.ui.wizards,
+ org.spoofax.terms.attachments

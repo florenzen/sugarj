@@ -1,0 +1,8 @@
+module tests.check.Module07
+
+import typing.check.TypeChecker
+import tests.check.Module05
+import tests.check.Module06
+
+val z = x
+val y = x

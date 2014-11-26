@@ -1,0 +1,5 @@
+module tests.check.Module05
+
+import typing.check.TypeChecker
+
+public val x = "x"

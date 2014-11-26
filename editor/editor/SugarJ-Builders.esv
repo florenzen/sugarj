@@ -11,5 +11,3 @@ builders
                                                                                                               
   provider : include/sugarj.ctree                                                                             
   provider : include/sugarj-java.jar                                                                          
-                                                                                                              
-  builder  : "Show abstract syntax (for selection)" = generate-aterm (openeditor) (realtime) (source)

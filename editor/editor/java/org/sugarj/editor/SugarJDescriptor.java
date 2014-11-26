@@ -2,6 +2,10 @@ package org.sugarj.editor;
 
 import static org.spoofax.interpreter.core.Tools.termAt;
 
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -22,6 +26,7 @@ import org.strategoxt.imp.runtime.dynamicloading.IDynamicLanguageService;
 import org.strategoxt.imp.runtime.dynamicloading.IOnSaveService;
 import org.strategoxt.imp.runtime.parser.SGLRParseController;
 import org.strategoxt.imp.runtime.services.StrategoObserver;
+import org.sugarj.common.path.AbsolutePath;
 
 /**
  * A descriptor that creates file-specific editor services.
@@ -48,12 +53,20 @@ public class SugarJDescriptor extends Descriptor {
       Class<T> type, SGLRParseController controller)
       throws BadDescriptorException {
     
-    if (controller != null && controller.getParser() instanceof SugarJParser) {
+    if (controller != null && controller.getParser() instanceof SugarJParser && ((SugarJParser) controller.getParser()).isInitialized()) {
       List<IStrategoTerm> services = ((SugarJParser) controller.getParser()).getEditorServices();
       if (services != null && !services.equals(lastServices)) {
-        reloadEditors(controller);
         setDocument(composeDefinitions(baseDocument, services));
+        reloadEditors(controller);
         lastServices = services;
+        
+//        String s = services.toString();
+//        int start = s.indexOf("SemanticProvider(");
+//        int end = s.indexOf(")", start);
+//        if (start > 0) {
+//          String f = s.substring(start + "SemanticProvider(".length() + 1, end - 1);
+//          System.out.println("Load provider: " + f);
+//        }
       }
     }
     
@@ -133,5 +146,12 @@ public class SugarJDescriptor extends Descriptor {
     for (IStrategoTerm term : StrategoListIterator.iterable(list)) {
       all.add(term);
     }
+  }
+  
+  @Override
+  public InputStream openAttachment(String path) throws FileNotFoundException {
+    if (AbsolutePath.acceptable(path))
+      return new BufferedInputStream(new FileInputStream(path));
+    return super.openAttachment(path);
   }
 }

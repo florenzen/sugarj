@@ -1,0 +1,79 @@
+module typing.language.RelationDeclaration
+
+import org.sugarj.languages.Sdf2
+import org.sugarj.languages.Stratego
+
+context-free syntax
+  TypeRelationDecl -> SugarDefElem
+  "typing" "relation" StrategoId TypeRelationSignature -> TypeRelationDecl {cons("TypeRelationDecl")}
+
+  TypeRelationCtx TypeRelationSymbol TypeRelationTerm TypeRelationOfTypeSymbol TypeRelationType
+    -> TypeRelationSignature {cons("TypeRelationSig")}
+  
+  Sdf2Sort -> TypeRelationCtx
+  OperatorSymbol -> TypeRelationSymbol {cons("TypeRelationSymbol")}
+  Sdf2Sort -> TypeRelationTerm
+  OperatorSymbol -> TypeRelationOfTypeSymbol {cons("TypeRelationOfTypeSymbol")}
+  Sdf2Sort -> TypeRelationType
+
+lexical syntax
+  ~[\ \n\t\r]+ -> OperatorSymbol
+lexical restrictions
+  OperatorSymbol -/- ~[\ \n\t\r]
+
+
+desugarings
+  desugar-type-relation-declaration
+
+rules
+  desugar-type-relation-declaration =
+    SugarBody(
+      where(filter(?TypeRelationDecl(_,_)); not(?[])); 
+      mapconcat(type-relation-declaration-to-sugar <+ ![<id>]))
+
+  type-relation-declaration-to-sugar :
+    TypeRelationDecl(name, rel) ->
+    [grammar-elem(context-free-syntax([prod | metavar-prods])),
+     transformation-elem(Rules([rule]))]
+  where
+    <type-rel-to-prod(|name)> rel => prod;
+    <type-rel-to-rule(|name)> rel => rule;
+    <type-rel-metavar-prods> rel => metavar-prods
+
+  type-rel-to-prod(|name) : 
+    TypeRelationSig(ctxSort, TypeRelationSymbol(relSymbol), termSort, TypeRelationOfTypeSymbol(typeOfSymbol), typeSort) ->
+    prod([sort(ctxSort), lit(relSymbol), sort(termSort), lit(typeOfSymbol), sort(typeSort)],
+         sort("TypeRelation"),
+         attrs([cons-attr]))
+  where
+    <conc-strings> (name, "-TypeRelation") => cons-name;
+    !term(default(appl(unquoted("cons"), [fun(quoted(cons-name))]))) => cons-attr
+
+  take-type-relation-name = string-as-chars(back-split-at(|13); ?(<id>,_))
+
+  type-rel-to-rule(|name) :
+    TypeRelationSig(ctxSort, TypeRelationSymbol(relSymbol), termSort, TypeRelationOfTypeSymbol(typeOfSymbol), typeSort) ->
+    RDefNoArgs("type-relation-name",
+               RuleNoCond(Tuple([NoAnnoList(Str(relSymbol)), NoAnnoList(Str(typeOfSymbol))]), 
+                          NoAnnoList(Str(name))))
+
+  type-rel-metavar-prods : 
+    TypeRelationSig(ctxSort, _, termSort, _, typeSort) ->
+    [<type-rel-metavar-prod> ctxSort,
+     <type-rel-metavar-prod> termSort,
+     <type-rel-metavar-prod> typeSort]
+
+  type-rel-metavar-prod :
+    name ->
+    prod([lit("~"), sort("StrategoVar")], sort(name), attrs([cons-attr]))
+  where
+    !"Metavar" => cons-name;
+    !term(default(appl(unquoted("cons"), [fun(quoted(cons-name))]))) => cons-attr
+
+signature constructors
+  Metavar : String -> Term
+
+colorer
+  darkergreen = 0 80 0
+  _.Metavar : 190 190 190
+  _.Metavar : darkergreen (recursive)

@@ -27,8 +27,8 @@ import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.part.FileEditorInput;
-import org.sugarj.LanguageLibFactory;
-import org.sugarj.LanguageLibRegistry;
+import org.sugarj.AbstractBaseLanguage;
+import org.sugarj.BaseLanguageRegistry;
 import org.sugarj.common.CommandExecution;
 import org.sugarj.common.Environment;
 import org.sugarj.common.FileCommands;
@@ -36,7 +36,6 @@ import org.sugarj.common.Log;
 import org.sugarj.common.path.AbsolutePath;
 import org.sugarj.common.path.Path;
 import org.sugarj.common.path.RelativePath;
-import org.sugarj.common.path.RelativeSourceLocationPath;
 import org.sugarj.driver.Driver;
 import org.sugarj.driver.ModuleSystemCommands;
 import org.sugarj.driver.Result;
@@ -53,12 +52,12 @@ public class Builder extends IncrementalProjectBuilder {
 
   private class BuildInput {
     public final IResource resource;
-    public final RelativeSourceLocationPath sourceFile;
-    public final LanguageLibFactory langLibFactory;
-    public BuildInput(IResource resource, RelativeSourceLocationPath path, LanguageLibFactory langLibFactory) {
+    public final RelativePath sourceFile;
+    public final AbstractBaseLanguage baseLang;
+    public BuildInput(IResource resource, RelativePath path, AbstractBaseLanguage baseLang) {
       this.resource = resource; 
       this.sourceFile = path;
-      this.langLibFactory = langLibFactory;
+      this.baseLang = baseLang;
     }
   }
 
@@ -90,69 +89,52 @@ public class Builder extends IncrementalProjectBuilder {
   
   protected void clean(IProgressMonitor monitor) throws CoreException {
     File f = getProject().getLocation().append(JavaCore.create(getProject()).getOutputLocation().makeRelativeTo(getProject().getFullPath())).toFile();
+    Environment environment = SugarJParseController.makeProjectEnvironment(getProject());
     try {
       FileCommands.delete(new AbsolutePath(f.getPath()));
+      FileCommands.delete(environment.getParseBin());
+      FileCommands.delete(environment.getCacheDir());
     } catch (IOException e) {
     }
+    
   }
 
   private void incrementalBuild(IResourceDelta delta, IProgressMonitor monitor) {
     boolean rebuild = true;
 
-//    final LanguageLibRegistry libReg = LanguageLibRegistry.getInstance();
-//    try {
-//      class ShouldRebuildResourceDeltaVisitor implements IResourceDeltaVisitor {
-//        boolean rebuild = false;
-//        public boolean visit(IResourceDelta delta) {
-//          if (libReg.isRegistered(delta.getFullPath().getFileExtension()))
-//            rebuild = true;
-//          
-//          // continue rebuild has not been required so far
-//          return !rebuild;
-//        }
-//      };
-//      
-//      ShouldRebuildResourceDeltaVisitor visitor = new ShouldRebuildResourceDeltaVisitor();
-//      delta.accept(visitor);
-//      rebuild = visitor.rebuild;
-//    } catch (CoreException e) {
-//      e.printStackTrace();
-//    }
-    
     if (rebuild)
       fullBuild(monitor);
   }
 
   private void fullBuild(IProgressMonitor monitor) {
-    final LanguageLibRegistry libReg = LanguageLibRegistry.getInstance();
+    final BaseLanguageRegistry languageReg = BaseLanguageRegistry.getInstance();
     final LinkedList<BuildInput> resources = new LinkedList<BuildInput>();
 
     try {
       getProject().accept(new IResourceVisitor() {
-        Environment environment = SugarJParseController.makeProjectEnvironment(JavaCore.create(getProject()));
+        Environment environment = SugarJParseController.makeProjectEnvironment(getProject());
         
         @Override
         public boolean visit(IResource resource) throws CoreException {
           Path root = new AbsolutePath(getProject().getLocation().makeAbsolute().toString());
-          Environment environment = this.environment;
           IPath relPath = resource.getFullPath().makeRelativeTo(getProject().getFullPath());
           if (!relPath.isEmpty() &&
-              (environment.getBin().equals(new RelativePath(root, relPath.toString())) ||
+              (environment.getParseBin().equals(new RelativePath(root, relPath.toString())) ||
                environment.getIncludePath().contains(new RelativePath(root, relPath.toString()))))
             return false;
           
-          if (libReg.isRegistered(resource.getFileExtension())) {
+          if (languageReg.isRegistered(resource.getFileExtension())) {
             String path = getProject().getLocation().makeAbsolute() + "/" + relPath;
-            final RelativeSourceLocationPath sourceFile = ModuleSystemCommands.locateSourceFile(
+            final RelativePath sourceFile = ModuleSystemCommands.locateSourceFile(
                     path.toString(),
                     environment.getSourcePath()); 
             
             if (sourceFile == null) {
-              org.strategoxt.imp.runtime.Environment.logWarning("cannot locate source file for ressource " + resource.getFullPath());
+//              org.strategoxt.imp.runtime.Environment.logWarning("cannot locate source file for ressource " + resource.getFullPath());
               return false;
             }
               
-            resources.addFirst(new BuildInput(resource, sourceFile, libReg.getLanguageLib(resource.getFileExtension())));
+            resources.addFirst(new BuildInput(resource, sourceFile, languageReg.getBaseLanguage(resource.getFileExtension())));
           }
           return true;
         }
@@ -165,6 +147,9 @@ public class Builder extends IncrementalProjectBuilder {
   }
 
   private void build(IProgressMonitor monitor, final List<BuildInput> inputs, String what) {
+    final Environment environment = SugarJParseController.makeProjectEnvironment(getProject());
+    environment.setGenerateFiles(true);
+    
     CommandExecution.SILENT_EXECUTION = false;
     CommandExecution.SUB_SILENT_EXECUTION = false;
     CommandExecution.FULL_COMMAND_LINE = true;
@@ -189,11 +174,10 @@ public class Builder extends IncrementalProjectBuilder {
               
             monitor.beginTask("compile " + input.sourceFile.getRelativePath(), IProgressMonitor.UNKNOWN);
 
-            Environment environment = input.sourceFile.getSourceLocation().getEnvironment();
-            RelativePath depFile = new RelativePath(environment.getBin(), FileCommands.dropExtension(input.sourceFile.getRelativePath()) + ".dep");
-            Result res = Result.readDependencyFile(depFile, environment);
+            RelativePath depFile = new RelativePath(environment.getParseBin(), FileCommands.dropExtension(input.sourceFile.getRelativePath()) + ".dep");
+            Result res = Result.readDependencyFile(depFile);
             if (res == null || !res.isUpToDate(input.sourceFile, environment))
-              res = Driver.compile(input.sourceFile, monitor, input.langLibFactory);
+              res = Driver.run(input.sourceFile, environment, monitor, input.baseLang);
             
             IWorkbenchWindow[] workbenchWindows = PlatformUI.getWorkbench().getWorkbenchWindows();
             for (IWorkbenchWindow workbenchWindow : workbenchWindows)

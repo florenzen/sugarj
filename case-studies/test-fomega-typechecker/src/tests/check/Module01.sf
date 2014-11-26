@@ -1,0 +1,9 @@
+module tests.check.Module01
+
+import qualified typing.check.TypeChecker
+
+public type N = Nat
+public val z = 0
+
+type Private = String
+val private = 0

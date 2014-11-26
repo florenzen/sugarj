@@ -1,0 +1,127 @@
+module typing.rules.ExprTypeRules
+
+import typing.rules.Syntax
+import typing.rules.Desugaring
+
+// TODO: fold/unfold
+
+~C |- ~e1 : ~T1
+~C |- ~e2 : ~T2
+~C |- ~e3 : ~T3
+~C |- ~T1 ~> Bool
+~C |- ~T2 ~> ~U
+~C |- ~T3 ~> ~U
+=================================== T-If
+~C |- if ~e1 then ~e2 else ~e3 : ~U
+
+
+(~C;~%X::~K1) |- ~e2 : ~T2
+=========================================== T-TAbs
+~C |- \~%X::~K1. ~e2 : forall ~%X::~K1. ~T2
+
+
+(~C;~%x:~T1) |- ~e2 : ~T2
+~C |- ~T1 :: *
+================================ T-Abs
+~C |- \~%x:~T1. ~e2 : ~T1 -> ~T2
+
+
+~C |- ~e : ~S
+~C |- ~T :: *
+~C |- ~S ~> ~U
+~C |- ~T ~> ~U
+=================== T-As
+~C |- ~e as ~T : ~T
+
+
+~C |- ~e1 : ~T1
+~C |- ~T1 ~> forall ~%X::~K11. ~T12
+~C |- ~T2 :: ~K11
+=================================== T-TApp
+~C |- ~e1 [~T2] : [~%X |-> ~T2]~T12
+
+
+~C |- ~e1 : ~T1
+~C |- ~e2 : ~T2
+~C |- ~T1 ~> ~T11 -> ~T12
+~C |- ~T2 ~> ~T11
+========================= T-App
+~C |- ~e1 ~e2 : ~T12
+
+
+================= T-True
+~C |- true : Bool
+
+
+================== T-False
+~C |- false : Bool
+
+
+=============== T-Nat
+~C |- ~#n : Nat
+
+
+================== T-String
+~C |- ~$s : String
+
+
+~%x:~T in ~C
+============== T-Var
+~C |- ~%x : ~T
+
+
+~&qx:~T in ~C
+=============== T-QVar
+~C |- ~&qx : ~T
+
+
+============= T-RecordNil
+~C |- {} : {}
+
+
+~C |- ~e : ~T
+~C |- {~flds} : ~S
+~C |- ~S ~> {~decls}
+~%x notin sel(~decls)
+======================================== T-RecordCons
+~C |- {~%x=~e, ~flds} : {~%x:~T, ~decls}
+
+
+~C |- ~e : ~T
+~C |- ~T ~> {~decls}
+~%x:~S in decls ~decls
+====================== T-Select
+~C |- ~e!~%x : ~S
+
+
+~C |- ~T :: *
+~C |- ~e : ~S
+~C |- ~S ~> ~U
+~C |- ~T ~> <~decls>
+~%x:~U in decls ~decls
+========================= T-Variant
+~C |- <~%x=~e> as ~T : ~T
+
+
+~C |- ~e : ~S
+~C |- ~S ~> <~decls>
+lab(~decls) ~= tag(~brs)
+~C | ~decls |- ~brs : ~T
+========================== T-Case
+~C |- case ~e of ~brs : ~T
+
+
+~%x:~S in decls ~decls
+(~C;~%y:~S) |- ~e : ~T
+=================================== TB-End
+~C | ~decls |- <~%x=~%y> => ~e : ~T
+
+
+~%x notin tag(~brs)
+~%x:~S in decls ~decls
+(~C;~%y:~S) |- ~e : ~T1
+~C |- ~T1 ~> ~U
+~C | ~decls |- ~brs : ~T2
+~C |- ~T2 ~> ~U
+========================================= TB-Cons
+~C | ~decls |- <~%x=~%y> => ~e; ~brs : ~U

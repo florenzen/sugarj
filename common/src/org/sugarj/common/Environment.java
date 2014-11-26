@@ -2,18 +2,20 @@ package org.sugarj.common;
 
 
 import java.io.File;
+import java.io.IOException;
 import java.io.Serializable;
-import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.WeakHashMap;
 
 import org.spoofax.interpreter.terms.IStrategoTerm;
 import org.sugarj.common.path.AbsolutePath;
 import org.sugarj.common.path.Path;
 import org.sugarj.common.path.RelativePath;
-import org.sugarj.common.path.SourceLocation;
-import org.sugarj.stdlib.StdLib;
+import org.sugarj.util.Renaming;
 
 
 /**
@@ -29,46 +31,19 @@ public class Environment implements Serializable {
   
   public static String sep = "/";
   public static String classpathsep = File.pathSeparator;
-
-  /**
-   * @author Sebastian Erdweg <seba at informatik uni-marburg de>
-   */
-  private class RelativePathBin extends RelativePath {
-    private static final long serialVersionUID = -4418944917032203709L;
-
-    public RelativePathBin(String relativePath) {
-      super(relativePath);
-    }
-    
-    @Override
-    public Path getBasePath() {
-      return bin;
-    }
-  }
   
-  /**
-   * @author Sebastian Erdweg <seba at informatik uni-marburg de>
-   */
-  private class RelativePathCache extends RelativePath {
-    private static final long serialVersionUID = -6347244639940662095L;
-
-    public RelativePathCache(String relativePath) {
-      super(relativePath);
-    }
-    
-    @Override
-    public Path getBasePath() {
-      return cacheDir;
-    }
-  }
-
+  private boolean generateFiles;
   
   private Path cacheDir = null;
-  
+
   private Path root = new AbsolutePath(".");
   
-  private Path bin = new AbsolutePath(".");
-  
+  private Path compileBin = new AbsolutePath(".");
+
+  /**
+   * The directory in which to place files at parse time.
+   */
+  private final Path parseBin;
   
   /* 
    * parse all imports simultaneously, i.e., not one after the other
@@ -80,17 +55,28 @@ public class Environment implements Serializable {
    */
   private boolean noChecking = false;
 
-  private boolean generateJavaFile = false;
-  
-  
   private Path tmpDir = new AbsolutePath(System.getProperty("java.io.tmpdir"));
   
-  private Set<SourceLocation> sourcePath = new HashSet<SourceLocation>();
-  private Set<Path> includePath = new HashSet<Path>();
+  private List<Path> sourcePath = new LinkedList<Path>();
+  private List<Path> includePath = new LinkedList<Path>();
   
-  public Environment() {
-    includePath.add(bin);
-    includePath.add(new AbsolutePath(StdLib.stdLibDir.getAbsolutePath()));
+  /**
+   * List of renamings that need to be applied during compilation.
+   */
+  private List<Renaming> renamings = new LinkedList<Renaming>();
+  
+  public Environment(boolean generateFiles, Path stdlibDirPath) {
+    includePath.add(compileBin);
+    includePath.add(stdlibDirPath);
+    
+    try {
+      this.parseBin = FileCommands.newTempDir();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    
+    if (!generateFiles)
+      includePath.add(parseBin);
   }
   
   public Path getRoot() {
@@ -101,23 +87,33 @@ public class Environment implements Serializable {
     this.root = root;
   }
 
-  public Set<SourceLocation> getSourcePath() {
-    return sourcePath;
+  public void addToSourcePath(Path p) {
+    sourcePath.add(p);
+  }
+  
+  public List<Path> getSourcePath() {
+    return Collections.unmodifiableList(new ArrayList<>(sourcePath));
   }
 
-  public void setSourcePath(Set<SourceLocation> sourcePath) {
+  public void setSourcePath(List<Path> sourcePath) {
     this.sourcePath = sourcePath;
   }
 
   public Path getBin() {
-    return bin;
+    return generateFiles ? compileBin : parseBin;
   }
 
   public void setBin(Path bin) {
-    if (this.bin!=null)
-      includePath.remove(this.bin);
-    this.bin = bin;
-    includePath.add(bin);
+    if (this.compileBin != null) {
+      includePath.remove(this.compileBin);
+      includePath.add(bin);
+    }
+    this.compileBin = bin;
+    try {
+      FileCommands.createDir(bin);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
   }
 
   public Path getCacheDir() {
@@ -126,6 +122,14 @@ public class Environment implements Serializable {
 
   public void setCacheDir(Path cacheDir) {
     this.cacheDir = cacheDir;
+  }
+
+  public Path getCompileBin() {
+    return compileBin;
+  }
+  
+  public Path getParseBin() {
+    return parseBin;
   }
 
   public boolean isAtomicImportParsing() {
@@ -144,14 +148,6 @@ public class Environment implements Serializable {
     this.noChecking = noChecking;
   }
 
-  public boolean isGenerateJavaFile() {
-    return generateJavaFile;
-  }
-
-  public void setGenerateJavaFile(boolean generateJavaFile) {
-    this.generateJavaFile = generateJavaFile;
-  }
-
   public Path getTmpDir() {
     return tmpDir;
   }
@@ -160,19 +156,47 @@ public class Environment implements Serializable {
     this.tmpDir = tmpDir;
   }
 
-  public Set<Path> getIncludePath() {
-    return includePath;
+  public void addToIncludePath(Path p) {
+    this.includePath.add(p);
+  }
+  
+  public List<Path> getIncludePath() {
+    return Collections.unmodifiableList(new ArrayList<>(includePath));
   }
 
-  public void setIncludePath(Set<Path> includePath) {
+  public void setIncludePath(List<Path> includePath) {
     this.includePath = includePath;
   }
 
   public RelativePath createCachePath(String relativePath) {
-    return new RelativePathCache(relativePath);
+    return new RelativePath(cacheDir, relativePath);
+  }
+  
+  public RelativePath createOutPath(String relativePath) {
+    return new RelativePath(getBin(), relativePath);
   }
 
-  public RelativePath createBinPath(String relativePath) {
-    return new RelativePathBin(relativePath);
+  public List<Renaming> getRenamings() {
+    return renamings;
+  }
+  
+  public void setRenamings(List<Renaming> renamings) {
+    this.renamings = renamings;
+  }
+
+  public boolean doGenerateFiles() {
+    return generateFiles;
+  }
+
+  public void setGenerateFiles(boolean b) {
+    if (this.generateFiles == b)
+      return;
+    
+    if (this.generateFiles)
+      includePath.add(parseBin);
+    else
+      includePath.add(compileBin);
+
+    this.generateFiles = b;
   }
 }

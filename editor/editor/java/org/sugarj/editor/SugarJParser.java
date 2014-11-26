@@ -4,42 +4,41 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.core.runtime.IProgressMonitor;
 import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.ISchedulingRule;
 import org.eclipse.core.runtime.jobs.Job;
 import org.spoofax.interpreter.terms.IStrategoList;
 import org.spoofax.interpreter.terms.IStrategoString;
 import org.spoofax.interpreter.terms.IStrategoTerm;
 import org.spoofax.interpreter.terms.ITermFactory;
-import org.spoofax.jsglr_layout.client.InvalidParseTableException;
-import org.spoofax.jsglr_layout.client.KeywordRecognizer;
-import org.spoofax.jsglr_layout.client.ParseTable;
-import org.spoofax.jsglr_layout.client.SGLR;
-import org.spoofax.jsglr_layout.client.imploder.IToken;
-import org.spoofax.jsglr_layout.client.imploder.Token;
-import org.spoofax.jsglr_layout.client.imploder.Tokenizer;
-import org.spoofax.jsglr_layout.shared.BadTokenException;
-import org.spoofax.jsglr_layout.shared.SGLRException;
+import org.spoofax.jsglr.client.InvalidParseTableException;
+import org.spoofax.jsglr.client.KeywordRecognizer;
+import org.spoofax.jsglr.client.ParseTable;
+import org.spoofax.jsglr.client.SGLR;
+import org.spoofax.jsglr.client.imploder.IToken;
+import org.spoofax.jsglr.client.imploder.Token;
+import org.spoofax.jsglr.client.imploder.Tokenizer;
+import org.spoofax.jsglr.shared.BadTokenException;
+import org.spoofax.jsglr.shared.SGLRException;
 import org.spoofax.terms.attachments.ParentAttachment;
 import org.strategoxt.imp.runtime.parser.JSGLRI;
-import org.strategoxt.imp.runtime.services.ContentProposer;
-import org.sugarj.LanguageLibFactory;
-import org.sugarj.LanguageLibRegistry;
+import org.strategoxt.imp.runtime.services.ContentProposerSemantic;
+import org.sugarj.AbstractBaseLanguage;
+import org.sugarj.BaseLanguageRegistry;
 import org.sugarj.common.ATermCommands;
 import org.sugarj.common.CommandExecution;
 import org.sugarj.common.Environment;
 import org.sugarj.common.FileCommands;
 import org.sugarj.common.Log;
 import org.sugarj.common.path.AbsolutePath;
-import org.sugarj.common.path.RelativeSourceLocationPath;
+import org.sugarj.common.path.RelativePath;
 import org.sugarj.driver.Driver;
 import org.sugarj.driver.ModuleSystemCommands;
 import org.sugarj.driver.Result;
@@ -53,10 +52,29 @@ public class SugarJParser extends JSGLRI {
 
   private Environment environment;
   
-  private static Map<String, Result> results = new HashMap<String, Result>();
-  private static Set<String> pending = new HashSet<String>();
+  private static Set<RelativePath> pending = new HashSet<RelativePath>();
   
-  private Result result;
+  private final static int PARELLEL_PARSES = 1;
+  private final static List<ISchedulingRule> schedulingRules = new LinkedList<ISchedulingRule>();
+  private static int nextSchedulingRule = 0;
+  static {
+    for (int i = 0; i < PARELLEL_PARSES; i++) {
+      schedulingRules.add(new ISchedulingRule() {
+        @Override
+        public boolean isConflicting(ISchedulingRule rule) { return rule == this; }
+        @Override
+        public boolean contains(ISchedulingRule rule) { return rule == this; }
+      });
+    }
+  }
+  private synchronized static ISchedulingRule nextSchedulingRule() {
+    if (nextSchedulingRule >= schedulingRules.size())
+      nextSchedulingRule = 0;
+    return schedulingRules.get(nextSchedulingRule++);
+  }
+  
+  private RelativePath sourceFile;
+//  private Result result;
 //  private JSGLRI parser;
 //  private Path parserTable;
   
@@ -67,73 +85,74 @@ public class SugarJParser extends JSGLRI {
   
   @Override
   protected IStrategoTerm doParse(String input, String filename) throws IOException {
-    
+    if (environment == null && getController().getProject() != null)
+      environment = SugarJParseController.makeProjectEnvironment(getController().getProject().getRawProject());
     assert environment != null;
     
-    if (!LanguageLibRegistry.getInstance().isRegistered(FileCommands.getExtension(filename)))
-      return null;
+    if (!BaseLanguageRegistry.getInstance().isRegistered(FileCommands.getExtension(filename))) {
+      Log.log.logErr("Unknown source-file extension " + FileCommands.getExtension(filename), Log.ALWAYS);
+      return parseFailureResult(filename).getSugaredSyntaxTree();
+    }
 
-    this.result = null;
-    Result result = getResult(filename);
+    RelativePath sourceFile = ModuleSystemCommands.locateSourceFile(filename, environment.getSourcePath());
+    if (sourceFile == null)
+      throw new IllegalArgumentException("Cannot find source file for path " + filename);
+    this.sourceFile = sourceFile;
+    String modulePath = FileCommands.dropExtension(sourceFile.getRelativePath());
+    Result result = ModuleSystemCommands.locateResult(modulePath, environment);
 
     if (result == null)
       result = parseFailureResult(filename);
 
-    if (input.contains(ContentProposer.COMPLETION_TOKEN) && result != null && result.getParseTable() != null) {
-      this.result = result;
-      return ATermCommands.fixTokenizer(parseCompletionTree(input, filename, result));
-    }
-
-    if (result.isUpToDateShallow(input.hashCode(), environment)) {
-      this.result = result;
-      return result.getSugaredSyntaxTree();
-    }
+    if (input.contains(ContentProposerSemantic.COMPLETION_TOKEN) && result != null && result.getParseTable() != null)
+      return parseCompletionTree(input, filename, result);
+    if (result.getSugaredSyntaxTree() != null && result.isUpToDate(input.hashCode(), environment))
+        return result.getSugaredSyntaxTree();
+    if (result.hasFailed())
+      return parseFailureResult(filename).getSugaredSyntaxTree();
     
-    if (!isPending(filename)) 
-      scheduleParse(input, filename);
+    if (!isPending(sourceFile)) 
+      scheduleParse(input, sourceFile);
     
-    return result.getSugaredSyntaxTree();
+    return result.getSugaredSyntaxTree() == null ? parseFailureResult(filename).getSugaredSyntaxTree() : result.getSugaredSyntaxTree();
   }
   
-  private synchronized void scheduleParse(final String input, final String filename) {
+  private synchronized void scheduleParse(final String input, final RelativePath sourceFile) {
     if (environment == null) {
       getController().scheduleParserUpdate(200, false);
       return;
     }
     
-    final RelativeSourceLocationPath sourceFile = ModuleSystemCommands.locateSourceFile(filename, environment.getSourcePath());
-    final LanguageLibFactory factory = LanguageLibRegistry.getInstance().getLanguageLib(FileCommands.getExtension(filename));
+    final AbstractBaseLanguage factory = BaseLanguageRegistry.getInstance().getBaseLanguage(FileCommands.getExtension(sourceFile));
 
-    SugarJParser.setPending(filename, true);
+    SugarJParser.setPending(sourceFile, true);
     
     Job parseJob = new Job("SugarJ parser: " + sourceFile.getRelativePath()) {
       @Override
       protected IStatus run(IProgressMonitor monitor) {
         monitor.beginTask("parse " + sourceFile.getRelativePath(), IProgressMonitor.UNKNOWN);
-        Result result = null;
         boolean ok = false;
         try {
-          result = runParser(input, sourceFile, factory, monitor);
+          runParser(input, sourceFile, factory, monitor);
           ok = true;
         } catch (InterruptedException e) {
-          result = null;
         } catch (Exception e) {
           org.strategoxt.imp.runtime.Environment.logException(e);
         } finally {
           monitor.done();
-          SugarJParser.this.result = result;
-          SugarJParser.putResult(filename, result);
-          SugarJParser.setPending(filename, false);
+          SugarJParser.setPending(sourceFile, false);
           if (ok)
             getController().scheduleParserUpdate(0, false);
         }
         return Status.OK_STATUS;
       }
     };
+    
+    parseJob.setRule(nextSchedulingRule());
     parseJob.schedule();
   }
   
-  private Result runParser(String input, RelativeSourceLocationPath sourceFile, LanguageLibFactory factory, IProgressMonitor monitor) throws InterruptedException {
+  private Result runParser(String input, RelativePath sourceFile, AbstractBaseLanguage factory, IProgressMonitor monitor) throws InterruptedException {
     CommandExecution.SILENT_EXECUTION = false;
     CommandExecution.SUB_SILENT_EXECUTION = false;
     CommandExecution.FULL_COMMAND_LINE = true;
@@ -143,7 +162,7 @@ public class SugarJParser extends JSGLRI {
     SugarJConsole.activateConsoleOnce();
     
     try {
-      return Driver.parse(input, sourceFile, monitor, factory);
+      return Driver.run(input, sourceFile, environment, monitor, factory);
     } catch (InterruptedException e) {
       throw e;
     } catch (Exception e) {
@@ -159,6 +178,7 @@ public class SugarJParser extends JSGLRI {
   
   @Override
   public Set<org.spoofax.jsglr.shared.BadTokenException> getCollectedErrors() {
+    Result result = ModuleSystemCommands.locateResult(FileCommands.dropExtension(sourceFile.getRelativePath()), environment);
     if (result == null)
       return Collections.emptySet();
     
@@ -171,35 +191,26 @@ public class SugarJParser extends JSGLRI {
 
   public List<IStrategoTerm> getEditorServices() {
     final List<IStrategoTerm> empty = Collections.emptyList();
+    Result result = ModuleSystemCommands.locateResult(FileCommands.dropExtension(sourceFile.getRelativePath()), environment);
     return result == null ? empty : new ArrayList<IStrategoTerm>(result.getEditorServices());
   }
+  
+  public boolean isInitialized() {
+    return sourceFile != null;
+  }
 
-  private static Result getResult(String file) {
-    synchronized (results) {
-      return results.get(file);
-    }
-  }
-  
-  public static void putResult(String file, Result result) {
-    if (result != null)
-      result.setSugaredSyntaxTree(result.getSugaredSyntaxTree());
-    synchronized (results) {
-      results.put(file, result);
-    }
-  }
-  
-  private static boolean isPending(String file) {
+  private static boolean isPending(RelativePath sourceFile) {
     synchronized (pending) {
-      return pending.contains(file);      
+      return pending.contains(sourceFile);      
     }
   }
   
-  private static void setPending(String file, boolean isPending) {
+  private static void setPending(RelativePath sourceFile, boolean isPending) {
     synchronized (pending) {
       if (isPending)
-        pending.add(file);
+        pending.add(sourceFile);
       else
-        pending.remove(file);
+        pending.remove(sourceFile);
     }
   }
   
@@ -224,19 +235,19 @@ public class SugarJParser extends JSGLRI {
 
     Tokenizer tokenizer = new Tokenizer(" ", " ", new KeywordRecognizer(pt) {});
     Token tok = tokenizer.makeToken(0, IToken.TK_UNKNOWN, true);
-    IStrategoTerm term = ATermCommands.makeList("SugarCompilationUnit", tok);
+    IStrategoTerm term = ATermCommands.makeList("CompilationUnit", tok);
     
-    Result r = new Result(true) {
-      public boolean isUpToDateShallow(int h, Environment env) { return false; }
+    Result r = new Result() {
       public boolean isUpToDate(int h, Environment env) { return false; }
     };
     r.setSugaredSyntaxTree(term);
+    r.setDesugaredSyntaxTree(term);
     r.registerEditorDesugarings(new AbsolutePath(StdLib.failureTrans.getAbsolutePath()));
     return r;
   }
   
   private IStrategoTerm parseCompletionTree(String input, String filename, Result result) throws IOException {
-
+    //TODO fix: adapt to parsing with parseMax
     RetractableTreeBuilder treeBuilder = new RetractableTreeBuilder();
     ParseTable table;
     try {
@@ -268,7 +279,7 @@ public class SugarJParser extends JSGLRI {
       
       IStrategoTerm nextDecl = ATermCommands.getApplicationSubterm(term, "NextToplevelDeclaration", 0);
       list.add(nextDecl);
-      if (nextDecl.toString().contains(ContentProposer.COMPLETION_TOKEN)) {
+      if (nextDecl.toString().contains(ContentProposerSemantic.COMPLETION_TOKEN)) {
         IStrategoList termList = ATermCommands.makeList("NextToplevelDeclaration", list);
         
         IStrategoList listIt = termList;

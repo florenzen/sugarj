@@ -5,17 +5,13 @@ Bundle-SymbolicName: org.sugarj.prolog;singleton:=true
 Bundle-Version: 1.0.0.qualifier
 Bundle-Activator: org.sugarj.prolog.Activator
 Bundle-ActivationPolicy: lazy
-Bundle-RequiredExecutionEnvironment: JavaSE-1.6
+Bundle-RequiredExecutionEnvironment: JavaSE-1.7
 Require-Bundle: org.eclipse.ui,
  org.eclipse.core.runtime,
- org.sugarj.stdlib,
  org.spoofax.terms,
- org.strategoxt.imp.nativebundle,
- org.strategoxt.imp.runtime,
  org.strategoxt.strj,
  org.sugarj.languagelib,
- org.sugarj.common,
- org.eclipse.jdt.core
+ org.sugarj.common
 Export-Package: org.sugarj,
  org.sugarj.languages,
  org.sugarj.prolog.init

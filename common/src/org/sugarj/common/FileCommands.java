@@ -7,6 +7,7 @@ import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URL;
@@ -34,6 +35,12 @@ public class FileCommands {
     }
   }
   
+  /**
+   * 
+   * @param suffix without dot "."
+   * @return
+   * @throws IOException
+   */
   public static Path newTempFile(String suffix) throws IOException {
     File f =
         File.createTempFile(
@@ -129,6 +136,17 @@ public class FileCommands {
     return fileData.toString();
   }
 
+  public static String readStreamAsString(InputStream in) throws IOException {
+    StringBuilder fileData = new StringBuilder(1000);
+    BufferedReader reader = new BufferedReader(new InputStreamReader(in));
+    char[] buf = new char[1024];
+    int numRead = 0;
+    while ((numRead = reader.read(buf)) != -1)
+      fileData.append(buf, 0, numRead);
+
+    reader.close();
+    return fileData.toString();
+  }
   
   public static String fileName(URL url) {
     return fileName(new AbsolutePath(url.getPath()));
@@ -301,6 +319,10 @@ public class FileCommands {
     return f1.getFile().lastModified() > f2.getFile().lastModified();
   }
 
+  public static boolean fileExists(Path file) {
+    return file != null && file.getFile().exists() && file.getFile().isFile();
+  }
+
   public static boolean exists(Path file) {
     return file != null && file.getFile().exists();
   }
@@ -343,6 +365,10 @@ public class FileCommands {
     return file;
   }
 
+  public static RelativePath dropFilename(RelativePath file) {
+    return new RelativePath(file.getBasePath(), dropFilename(file.getRelativePath()));
+  }
+  
   public static String dropFilename(String file) {
 	  int i = file.lastIndexOf(Environment.sep);
 	  if (i > 0) 
@@ -356,5 +382,49 @@ public class FileCommands {
       return readFileAsString(file).hashCode();
     
     return 0;
+  }
+
+  public static boolean isEmptyFile(Path prog) throws IOException {
+    FileInputStream in = null;
+    
+    try {
+      in = new FileInputStream(prog.getFile());
+      if (in.read() == -1)
+        return true;
+      return false;
+    } finally {
+      if (in != null)
+        in.close();
+    }
+  }
+
+  // cai 27.09.12
+  // convert path-separator to that of the OS
+  // so that strategoXT doesn't prepend ./ to C:/foo/bar/baz.
+  public static String nativePath(String path){
+      return path.replace('/', File.separatorChar);
+  }
+  
+  public static RelativePath getRelativePath(Path base, Path fullPath) {
+    if (fullPath instanceof RelativePath && ((RelativePath) fullPath).getBasePath().equals(base))
+      return (RelativePath) fullPath;
+    
+    String baseS = base.getAbsolutePath();
+    String fullS = fullPath.getAbsolutePath();
+    
+    if (fullS.startsWith(baseS))
+      return new RelativePath(base, fullS.substring(baseS.length()));
+    
+    return null;
+  }
+  
+  public static Path tryCopyFile(Path from, Path to, Path file) throws IOException {
+    RelativePath p = getRelativePath(from, file);
+    Path target = file;
+    if (p != null) {
+      target = new RelativePath(to, p.getRelativePath());
+      copyFile(p, target);
+    }
+    return target;
   }
 }

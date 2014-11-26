@@ -10,39 +10,37 @@ sorts Document Element Content
   context-free syntax
     Prologue Element Epilogue -> Document {cons("Document")}
     Element -> Content
-    Doctype -> Content {cons("DocTypeDec")}
-    Comment -> Content {cons("Comment")}    
+    DocTypeDecl -> Content {cons("DocTypeDec")}
+    HTMLComment -> Content {cons("Comment")}    
     
 %% module html-prolog
   context-free syntax
     HTMLDecl? Misc* DocTypePrologue? -> Prologue {cons("Prologue")}
     Misc* -> Epilogue {cons("Epilogue")}
-    Comment -> Misc {cons("Comment")}
+    HTMLComment -> Misc {cons("Comment")}
 
   context-free syntax
-    "<!DOCTYPE"		-> DocTypeLeft
-    ">"				-> DocTypeRight
+  "<!DOCTYPE" -> DocTypeLeft
 	"html"			-> RootElement
 	"PUBLIC"		-> OtherInfo
 	"SYSTEM"		-> OtherInfo
-	DocTypeLeft RootElement OtherInfo  URI* DocTypeRight	-> DocTypeDecl {cons("DocTypeDecl")}
+	DocTypeLeft RootElement OtherInfo  URI* ">"	-> DocTypeDecl {cons("DocTypeDecl")}
     DocTypeDecl Misc* -> DocTypePrologue {cons("DocTypePrologue")}
 
   syntax
     CharData      -> <Content-CF>
-    CDataSection  -> <Content-CF>
 
   context-free syntax
   	"<" ElemName Attribute* "/>" 	-> Element {cons("EmptyElement")}
    	"<" ElemName Attribute* ">" 		-> Element {cons("EmptyElement")}
     "<" ElemName Attribute* ">" Content* "</" ElemName ">"    	-> Element {cons("Element")}
-	QName -> ElemName {cons("ElemName")}
+	  NCName -> ElemName {cons("ElemName")}
       
   //context-free syntax
     //HTMLTagStart ElemName Attribute* HTMLSlashTagEnd 	-> Element {cons("EmptyElement")}
     //HTMLTagStart ElemName Attribute* HTMLTagEnd 		-> Element {cons("EmptyElement")}
     //HTMLTagStart ElemName Attribute* HTMLTagEnd Content* HTMLSlashTagStart ElemName HTMLTagEnd    	-> Element {cons("Element")}
-	//QName -> ElemName {cons("ElemName")}
+	//NCName -> ElemName {cons("ElemName")}
      
   lexical syntax
     [A-Za-z\_] [A-Za-z0-9\.\-\_]* 		-> EName
@@ -57,7 +55,7 @@ sorts Document Element Content
     
   context-free syntax
     AttrName "=" AttValue 	-> Attribute {cons("Attribute")}
-    QName -> AttrName {cons("AttrName")}
+    NCName -> AttrName {cons("AttrName")}
 
   syntax
     DoubleQuotedStm -> <URI-CF> {cons("URI")}
@@ -105,9 +103,6 @@ sorts Document Element Content
     CharDataText -/- ~[\<\&]
 
 %% module html-names
-  context-free syntax
-    NCName -> QName     {cons("QName")}
-
   lexical syntax
     [A-Za-z\_] [A-Za-z0-9\.\-\_]* -> NCName
 
@@ -118,19 +113,11 @@ sorts Document Element Content
   lexical syntax
     "<!--" -> CommentLeft
     "-->" -> CommentRight
-    CommentLeft CommentContent* CommentRight -> Comment
+    CommentLeft CommentContent* CommentRight -> HTMLComment
     Dash -> CommentContent
     ~[\-] -> CommentContent
     "-" -> Dash
 
   lexical restrictions
     Dash -/- [\-]
-    
-%% module html-whitespace
-  lexical syntax
-    [\ \t\n\13] -> LAYOUT
-
-  context-free restrictions
-    LAYOUT? -/- [\ \t\n\13]
-
 }
